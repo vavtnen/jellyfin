@@ -63,6 +63,13 @@ namespace MediaBrowser.Model.Configuration
         /// </summary>
         public bool SkipMediaProbe { get; set; }
 
+        /// <summary>
+        /// Gets or sets a value indicating whether to automatically merge movies
+        /// with the same metadata (IMDB ID, TMDB ID) into a single entry with multiple versions.
+        /// This is useful when you have the same movie in different qualities across different paths.
+        /// </summary>
+        public bool MergeMoviesWithSameMetadata { get; set; }
+
         public MediaPathInfo[] PathInfos { get; set; }
 
         public bool SaveLocalMetadata { get; set; }
