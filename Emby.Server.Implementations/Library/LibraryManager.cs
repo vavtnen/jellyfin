@@ -2901,7 +2901,18 @@ namespace Emby.Server.Implementations.Library
                 {
                     await ValidateTopLibraryFolders(CancellationToken.None).ConfigureAwait(false);
 
-                    StartScanInBackground();
+                    // Only scan the newly added library folder, not all libraries
+                    var newFolder = FindByPath(virtualFolderPath, true) as Folder;
+                    if (newFolder is not null)
+                    {
+                        await newFolder.ValidateChildren(
+                            new Progress<double>(),
+                            new MetadataRefreshOptions(new DirectoryService(_fileSystem)),
+                            recursive: true,
+                            cancellationToken: CancellationToken.None).ConfigureAwait(false);
+                    }
+
+                    LibraryMonitor.Start();
                 }
                 else
                 {

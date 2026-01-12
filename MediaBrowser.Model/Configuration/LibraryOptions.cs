@@ -56,6 +56,13 @@ namespace MediaBrowser.Model.Configuration
 
         public bool ExtractTrickplayImagesDuringLibraryScan { get; set; }
 
+        /// <summary>
+        /// Gets or sets a value indicating whether to skip media probing.
+        /// When enabled, Jellyfin will not use FFprobe to read media file headers,
+        /// which is useful for cloud storage where file access is expensive.
+        /// </summary>
+        public bool SkipMediaProbe { get; set; }
+
         public MediaPathInfo[] PathInfos { get; set; }
 
         public bool SaveLocalMetadata { get; set; }

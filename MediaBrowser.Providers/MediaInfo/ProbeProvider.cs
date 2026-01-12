@@ -43,6 +43,7 @@ namespace MediaBrowser.Providers.MediaInfo
         IHasItemChangeMonitor
     {
         private readonly ILogger<ProbeProvider> _logger;
+        private readonly ILibraryManager _libraryManager;
         private readonly AudioResolver _audioResolver;
         private readonly SubtitleResolver _subtitleResolver;
         private readonly LyricResolver _lyricResolver;
@@ -84,6 +85,7 @@ namespace MediaBrowser.Providers.MediaInfo
             ILyricManager lyricManager)
         {
             _logger = loggerFactory.CreateLogger<ProbeProvider>();
+            _libraryManager = libraryManager;
             _audioResolver = new AudioResolver(loggerFactory.CreateLogger<AudioResolver>(), localization, mediaEncoder, fileSystem, namingOptions);
             _subtitleResolver = new SubtitleResolver(loggerFactory.CreateLogger<SubtitleResolver>(), localization, mediaEncoder, fileSystem, namingOptions);
             _lyricResolver = new LyricResolver(loggerFactory.CreateLogger<LyricResolver>(), localization, mediaEncoder, fileSystem, namingOptions);
@@ -244,6 +246,14 @@ namespace MediaBrowser.Providers.MediaInfo
                 return _cachedTask;
             }
 
+            // Skip probing if library option is set (useful for cloud storage)
+            var libraryOptions = _libraryManager.GetLibraryOptions(item);
+            if (libraryOptions?.SkipMediaProbe == true)
+            {
+                _logger.LogDebug("Skipping media probe for {ItemPath} due to library settings.", item.Path);
+                return _cachedTask;
+            }
+
             if (item.IsShortcut)
             {
                 FetchShortcutInfo(item);
@@ -285,6 +295,14 @@ namespace MediaBrowser.Providers.MediaInfo
 
             if (!options.EnableRemoteContentProbe && !item.IsFileProtocol)
             {
+                return _cachedTask;
+            }
+
+            // Skip probing if library option is set (useful for cloud storage)
+            var libraryOptions = _libraryManager.GetLibraryOptions(item);
+            if (libraryOptions?.SkipMediaProbe == true)
+            {
+                _logger.LogDebug("Skipping media probe for {ItemPath} due to library settings.", item.Path);
                 return _cachedTask;
             }
 
