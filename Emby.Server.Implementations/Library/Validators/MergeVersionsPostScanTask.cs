@@ -38,6 +38,15 @@ namespace Emby.Server.Implementations.Library.Validators
         {
             _logger.LogInformation("MergeVersionsPostScanTask: Starting to scan for duplicate movies to merge");
 
+            // ============================================================================
+            // ONE-TIME CLEANUP CODE - Remove this section after first successful run
+            // This unlinks all previously merged alternate versions so we can re-merge correctly
+            // ============================================================================
+            await CleanupAllAlternateVersionsAsync(cancellationToken).ConfigureAwait(false);
+            // ============================================================================
+            // END ONE-TIME CLEANUP CODE
+            // ============================================================================
+
             // Collect all movies from all libraries with the option enabled
             var allMovies = new List<Video>();
 
@@ -393,6 +402,88 @@ namespace Emby.Server.Implementations.Library.Validators
                 "MergeVersionsPostScanTask: Primary version '{MovieName}' now has {Count} alternate versions",
                 primaryVersion.Name,
                 alternateVersionsOfPrimary.Count);
+        }
+
+        /// <summary>
+        /// ONE-TIME CLEANUP: Removes all alternate version links from all movies.
+        /// This method can be removed after the first successful run.
+        /// </summary>
+        private async Task CleanupAllAlternateVersionsAsync(CancellationToken cancellationToken)
+        {
+            _logger.LogInformation("MergeVersionsPostScanTask: ONE-TIME CLEANUP - Starting to unlink all alternate versions");
+
+            var startIndex = 0;
+            const int PageSize = 1000;
+            var totalCleaned = 0;
+
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                // Get all movies (not just from enabled libraries - we need to clean everything)
+                var movies = _libraryManager.GetItemList(new InternalItemsQuery
+                {
+                    MediaTypes = new[] { MediaType.Video },
+                    IncludeItemTypes = new[] { BaseItemKind.Movie },
+                    IsVirtualItem = false,
+                    StartIndex = startIndex,
+                    Limit = PageSize,
+                    Recursive = true
+                });
+
+                if (movies.Count == 0)
+                {
+                    break;
+                }
+
+                foreach (var item in movies)
+                {
+                    if (item is not Video video)
+                    {
+                        continue;
+                    }
+
+                    var needsUpdate = false;
+
+                    // Clear PrimaryVersionId if set
+                    if (!string.IsNullOrEmpty(video.PrimaryVersionId))
+                    {
+                        _logger.LogInformation(
+                            "MergeVersionsPostScanTask: CLEANUP - Clearing PrimaryVersionId for '{MovieName}' ({Path})",
+                            video.Name,
+                            video.Path);
+                        video.SetPrimaryVersionId(null);
+                        needsUpdate = true;
+                    }
+
+                    // Clear LinkedAlternateVersions if any
+                    if (video.LinkedAlternateVersions.Length > 0)
+                    {
+                        _logger.LogInformation(
+                            "MergeVersionsPostScanTask: CLEANUP - Clearing {Count} LinkedAlternateVersions for '{MovieName}' ({Path})",
+                            video.LinkedAlternateVersions.Length,
+                            video.Name,
+                            video.Path);
+                        video.LinkedAlternateVersions = Array.Empty<LinkedChild>();
+                        needsUpdate = true;
+                    }
+
+                    if (needsUpdate)
+                    {
+                        await video.UpdateToRepositoryAsync(ItemUpdateType.MetadataEdit, cancellationToken).ConfigureAwait(false);
+                        totalCleaned++;
+                    }
+                }
+
+                if (movies.Count < PageSize)
+                {
+                    break;
+                }
+
+                startIndex += PageSize;
+            }
+
+            _logger.LogInformation("MergeVersionsPostScanTask: ONE-TIME CLEANUP - Completed. Cleaned {Count} movies", totalCleaned);
         }
     }
 }
