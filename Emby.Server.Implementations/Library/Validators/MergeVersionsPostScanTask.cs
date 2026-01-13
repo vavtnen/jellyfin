@@ -184,15 +184,16 @@ namespace Emby.Server.Implementations.Library.Validators
 
             int Find(int x)
             {
-                if (!parent.ContainsKey(x))
+                if (!parent.TryGetValue(x, out var p))
                 {
                     parent[x] = x;
                     rank[x] = 0;
+                    return x;
                 }
 
-                if (parent[x] != x)
+                if (p != x)
                 {
-                    parent[x] = Find(parent[x]);
+                    parent[x] = Find(p);
                 }
 
                 return parent[x];
