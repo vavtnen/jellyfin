@@ -2497,6 +2497,14 @@ namespace Emby.Server.Implementations.Library
             if (episode.IsFileProtocol)
             {
                 episodeInfo = resolver.Resolve(episode.Path, isFolder, null, null, isAbsoluteNaming);
+
+                _logger.LogInformation(
+                    "EpisodePathParsing: Path='{Path}' -> EpisodeNumber={EpisodeNumber}, SeasonNumber={SeasonNumber}, EndingEpisodeNumber={EndingEpisodeNumber}",
+                    episode.Path,
+                    episodeInfo?.EpisodeNumber,
+                    episodeInfo?.SeasonNumber,
+                    episodeInfo?.EndingEpisodeNumber);
+
                 // Resolve from parent folder if it's not the Season folder
                 var parent = episode.GetParent();
                 if (episodeInfo is null && parent.GetType() == typeof(Folder))
@@ -2506,6 +2514,12 @@ namespace Emby.Server.Implementations.Library
                     {
                         // add the container
                         episodeInfo.Container = Path.GetExtension(episode.Path)?.TrimStart('.');
+
+                        _logger.LogInformation(
+                            "EpisodePathParsing (from parent): ParentPath='{ParentPath}' -> EpisodeNumber={EpisodeNumber}, SeasonNumber={SeasonNumber}",
+                            parent.Path,
+                            episodeInfo.EpisodeNumber,
+                            episodeInfo.SeasonNumber);
                     }
                 }
             }
@@ -2591,6 +2605,11 @@ namespace Emby.Server.Implementations.Library
                 {
                     if (episode.IndexNumber != episodeInfo.EpisodeNumber)
                     {
+                        _logger.LogInformation(
+                            "EpisodeIndexUpdate: Path='{Path}' - Changing IndexNumber from {OldValue} to {NewValue}",
+                            episode.Path,
+                            episode.IndexNumber,
+                            episodeInfo.EpisodeNumber);
                         changed = true;
                     }
 
