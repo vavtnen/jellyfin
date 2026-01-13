@@ -65,6 +65,13 @@ namespace MediaBrowser.Model.Configuration
         public bool SkipMediaProbe { get; set; } = true;
 
         /// <summary>
+        /// Gets or sets the maximum number of concurrent media probe operations.
+        /// This helps prevent API rate limiting (429 errors) when using cloud storage.
+        /// Set to 0 for unlimited. Defaults to 0.
+        /// </summary>
+        public int MediaProbeConcurrentLimit { get; set; } = 0;
+
+        /// <summary>
         /// Gets or sets a value indicating whether to automatically merge movies
         /// with the same metadata (IMDB ID, TMDB ID) into a single entry with multiple versions.
         /// This is useful when you have the same movie in different qualities across different paths.
