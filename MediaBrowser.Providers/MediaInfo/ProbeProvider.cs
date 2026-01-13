@@ -263,10 +263,10 @@ namespace MediaBrowser.Providers.MediaInfo
             }
 
             // Apply rate limiting if configured
-            var concurrentLimit = libraryOptions?.MediaProbeConcurrentLimit ?? 0;
+            var concurrentLimit = libraryOptions?.MediaProbeConcurrentLimit ?? 3;
             if (concurrentLimit > 0)
             {
-                var libraryId = _libraryManager.GetContentRoot(item)?.Id ?? Guid.Empty;
+                var libraryId = item.GetTopParent()?.Id ?? Guid.Empty;
                 var semaphore = _librarySemaphores.GetOrAdd(libraryId, _ => new SemaphoreSlim(concurrentLimit, concurrentLimit));
 
                 await semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -334,10 +334,10 @@ namespace MediaBrowser.Providers.MediaInfo
             }
 
             // Apply rate limiting if configured
-            var concurrentLimit = libraryOptions?.MediaProbeConcurrentLimit ?? 0;
+            var concurrentLimit = libraryOptions?.MediaProbeConcurrentLimit ?? 3;
             if (concurrentLimit > 0)
             {
-                var libraryId = _libraryManager.GetContentRoot(item)?.Id ?? Guid.Empty;
+                var libraryId = item.GetTopParent()?.Id ?? Guid.Empty;
                 var semaphore = _librarySemaphores.GetOrAdd(libraryId, _ => new SemaphoreSlim(concurrentLimit, concurrentLimit));
 
                 await semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);

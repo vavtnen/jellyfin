@@ -67,9 +67,9 @@ namespace MediaBrowser.Model.Configuration
         /// <summary>
         /// Gets or sets the maximum number of concurrent media probe operations.
         /// This helps prevent API rate limiting (429 errors) when using cloud storage.
-        /// Set to 0 for unlimited. Defaults to 0.
+        /// Set to 0 for unlimited. Defaults to 3.
         /// </summary>
-        public int MediaProbeConcurrentLimit { get; set; } = 0;
+        public int MediaProbeConcurrentLimit { get; set; } = 3;
 
         /// <summary>
         /// Gets or sets a value indicating whether to automatically merge movies
