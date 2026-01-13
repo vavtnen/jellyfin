@@ -223,6 +223,19 @@ namespace Emby.Server.Implementations.Library.Validators
                 }
             }
 
+            // Provider IDs that identify the actual content (not collections/boxsets)
+            // Only these should be used for duplicate detection
+            var validProviderNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "Imdb",
+                "Tmdb",
+                "Tvdb",
+                "Zap2It",
+                "TvRage",
+                "TvMaze",
+                "Trakt"
+            };
+
             // Build index of provider ID -> movie indices
             var providerIdToMovies = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
 
@@ -240,6 +253,16 @@ namespace Emby.Server.Implementations.Library.Validators
                 {
                     if (string.IsNullOrEmpty(id))
                     {
+                        continue;
+                    }
+
+                    // Skip collection/boxset provider IDs - they indicate movies in the same series, not duplicates
+                    if (!validProviderNames.Contains(provider))
+                    {
+                        _logger.LogDebug(
+                            "MergeVersionsPostScanTask: Skipping provider '{Provider}' for movie '{MovieName}' - not a content identifier",
+                            provider,
+                            movie.Name);
                         continue;
                     }
 
