@@ -60,15 +60,17 @@ namespace MediaBrowser.Model.Configuration
         /// Gets or sets a value indicating whether to skip media probing.
         /// When enabled, Jellyfin will not use FFprobe to read media file headers,
         /// which is useful for cloud storage where file access is expensive.
+        /// Defaults to true. Set to false in config to disable.
         /// </summary>
-        public bool SkipMediaProbe { get; set; }
+        public bool SkipMediaProbe { get; set; } = true;
 
         /// <summary>
         /// Gets or sets a value indicating whether to automatically merge movies
         /// with the same metadata (IMDB ID, TMDB ID) into a single entry with multiple versions.
         /// This is useful when you have the same movie in different qualities across different paths.
+        /// Defaults to true. Set to false in config to disable.
         /// </summary>
-        public bool MergeMoviesWithSameMetadata { get; set; }
+        public bool MergeMoviesWithSameMetadata { get; set; } = true;
 
         public MediaPathInfo[] PathInfos { get; set; }
 
