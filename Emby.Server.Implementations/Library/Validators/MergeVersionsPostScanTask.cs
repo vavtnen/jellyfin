@@ -6,7 +6,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Data.Enums;
 using MediaBrowser.Controller.Entities;
-using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Entities;
 using Microsoft.Extensions.Logging;
@@ -14,7 +13,7 @@ using Microsoft.Extensions.Logging;
 namespace Emby.Server.Implementations.Library.Validators
 {
     /// <summary>
-    /// Automatically merges movies with the same metadata (IMDB/TMDB ID) into a single entry with multiple versions.
+    /// Automatically merges movies with the same metadata (any matching provider ID) into a single entry with multiple versions.
     /// </summary>
     public class MergeVersionsPostScanTask : ILibraryPostScanTask
     {
@@ -37,22 +36,25 @@ namespace Emby.Server.Implementations.Library.Validators
         /// <inheritdoc />
         public async Task Run(IProgress<double> progress, CancellationToken cancellationToken)
         {
-            // Dictionary to track movies by their IMDB ID across all libraries
-            var imdbMoviesMap = new Dictionary<string, List<Video>>(StringComparer.OrdinalIgnoreCase);
-            var tmdbMoviesMap = new Dictionary<string, List<Video>>(StringComparer.OrdinalIgnoreCase);
+            _logger.LogInformation("MergeVersionsPostScanTask: Starting to scan for duplicate movies to merge");
 
-            var enabledLibraries = new HashSet<Guid>();
+            // Collect all movies from all libraries with the option enabled
+            var allMovies = new List<Video>();
 
-            // First pass: collect all movies from libraries with the option enabled
             foreach (var library in _libraryManager.RootFolder.Children)
             {
                 var libraryOptions = _libraryManager.GetLibraryOptions(library);
+                _logger.LogInformation(
+                    "MergeVersionsPostScanTask: Library '{LibraryName}' (ID: {LibraryId}) - MergeMoviesWithSameMetadata = {MergeEnabled}",
+                    library.Name,
+                    library.Id,
+                    libraryOptions?.MergeMoviesWithSameMetadata);
+
                 if (libraryOptions?.MergeMoviesWithSameMetadata != true)
                 {
+                    _logger.LogInformation("MergeVersionsPostScanTask: Skipping library '{LibraryName}' - merge option not enabled", library.Name);
                     continue;
                 }
-
-                enabledLibraries.Add(library.Id);
 
                 var startIndex = 0;
                 const int PageSize = 1000;
@@ -66,50 +68,49 @@ namespace Emby.Server.Implementations.Library.Validators
                         MediaTypes = new[] { MediaType.Video },
                         IncludeItemTypes = new[] { BaseItemKind.Movie },
                         IsVirtualItem = false,
-                        HasImdbId = true,
                         Parent = library,
                         StartIndex = startIndex,
                         Limit = PageSize,
                         Recursive = true
                     });
 
+                    _logger.LogInformation(
+                        "MergeVersionsPostScanTask: Retrieved {Count} movies from library '{LibraryName}' (startIndex: {StartIndex})",
+                        movies.Count,
+                        library.Name,
+                        startIndex);
+
                     foreach (var item in movies)
                     {
-                        if (item is not Video video)
+                        if (item is Video video)
                         {
-                            continue;
-                        }
-
-                        // Skip items that are already alternate versions of another item
-                        if (!string.IsNullOrEmpty(video.PrimaryVersionId))
-                        {
-                            continue;
-                        }
-
-                        var imdbId = video.GetProviderId(MetadataProvider.Imdb);
-                        if (!string.IsNullOrEmpty(imdbId))
-                        {
-                            if (!imdbMoviesMap.TryGetValue(imdbId, out var list))
+                            // Skip items that are already alternate versions of another item
+                            if (!string.IsNullOrEmpty(video.PrimaryVersionId))
                             {
-                                list = new List<Video>();
-                                imdbMoviesMap[imdbId] = list;
+                                _logger.LogDebug(
+                                    "MergeVersionsPostScanTask: Skipping '{MovieName}' - already an alternate version (PrimaryVersionId: {PrimaryVersionId})",
+                                    video.Name,
+                                    video.PrimaryVersionId);
+                                continue;
                             }
 
-                            list.Add(video);
-                        }
-                        else
-                        {
-                            // Fall back to TMDB ID if no IMDB ID
-                            var tmdbId = video.GetProviderId(MetadataProvider.Tmdb);
-                            if (!string.IsNullOrEmpty(tmdbId))
-                            {
-                                if (!tmdbMoviesMap.TryGetValue(tmdbId, out var list))
-                                {
-                                    list = new List<Video>();
-                                    tmdbMoviesMap[tmdbId] = list;
-                                }
+                            allMovies.Add(video);
 
-                                list.Add(video);
+                            // Log provider IDs for this movie
+                            var providerIds = video.ProviderIds;
+                            if (providerIds != null && providerIds.Count > 0)
+                            {
+                                var providerIdStr = string.Join(", ", providerIds.Select(p => $"{p.Key}={p.Value}"));
+                                _logger.LogDebug(
+                                    "MergeVersionsPostScanTask: Found movie '{MovieName}' with provider IDs: {ProviderIds}",
+                                    video.Name,
+                                    providerIdStr);
+                            }
+                            else
+                            {
+                                _logger.LogDebug(
+                                    "MergeVersionsPostScanTask: Found movie '{MovieName}' with NO provider IDs",
+                                    video.Name);
                             }
                         }
                     }
@@ -123,51 +124,179 @@ namespace Emby.Server.Implementations.Library.Validators
                 }
             }
 
-            // Combine TMDB movies into IMDB map for processing (IMDB takes precedence)
-            foreach (var (tmdbId, movies) in tmdbMoviesMap)
-            {
-                // Only process if there are duplicates and none of them have IMDB IDs
-                if (movies.Count > 1 && movies.All(m => string.IsNullOrEmpty(m.GetProviderId(MetadataProvider.Imdb))))
-                {
-                    // Use TMDB ID as key with prefix to avoid conflicts
-                    imdbMoviesMap[$"tmdb_{tmdbId}"] = movies;
-                }
-            }
+            _logger.LogInformation("MergeVersionsPostScanTask: Total movies collected: {Count}", allMovies.Count);
 
-            // Filter to only groups with duplicates
-            var duplicateGroups = imdbMoviesMap.Where(kvp => kvp.Value.Count > 1).ToList();
-
-            if (duplicateGroups.Count == 0)
+            if (allMovies.Count < 2)
             {
-                _logger.LogInformation("No duplicate movies found to merge");
+                _logger.LogInformation("MergeVersionsPostScanTask: Not enough movies to merge (need at least 2)");
                 progress.Report(100);
                 return;
             }
 
-            _logger.LogInformation("Found {Count} groups of duplicate movies to merge", duplicateGroups.Count);
+            // Group movies by matching provider IDs
+            var duplicateGroups = FindDuplicateGroups(allMovies);
+
+            if (duplicateGroups.Count == 0)
+            {
+                _logger.LogInformation("MergeVersionsPostScanTask: No duplicate movies found to merge");
+                progress.Report(100);
+                return;
+            }
+
+            _logger.LogInformation("MergeVersionsPostScanTask: Found {Count} groups of duplicate movies to merge", duplicateGroups.Count);
 
             var numComplete = 0;
             var count = duplicateGroups.Count;
 
-            foreach (var (providerId, movies) in duplicateGroups)
+            foreach (var group in duplicateGroups)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
+                var movieNames = string.Join(", ", group.Select(m => $"'{m.Name}' ({m.Path})"));
+                _logger.LogInformation("MergeVersionsPostScanTask: Merging group of {Count} movies: {Movies}", group.Count, movieNames);
+
                 try
                 {
-                    await MergeMoviesAsync(movies, cancellationToken).ConfigureAwait(false);
-                    _logger.LogInformation("Merged {Count} versions of movie with provider ID {ProviderId}", movies.Count, providerId);
+                    await MergeMoviesAsync(group, cancellationToken).ConfigureAwait(false);
+                    _logger.LogInformation("MergeVersionsPostScanTask: Successfully merged {Count} versions", group.Count);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error merging movies with provider ID {ProviderId}", providerId);
+                    _logger.LogError(ex, "MergeVersionsPostScanTask: Error merging movies: {Movies}", movieNames);
                 }
 
                 numComplete++;
                 progress.Report((double)numComplete / count * 100);
             }
 
+            _logger.LogInformation("MergeVersionsPostScanTask: Completed. Merged {Count} groups of duplicate movies", duplicateGroups.Count);
             progress.Report(100);
+        }
+
+        /// <summary>
+        /// Finds groups of movies that share at least one provider ID.
+        /// </summary>
+        private List<List<Video>> FindDuplicateGroups(List<Video> movies)
+        {
+            // Use Union-Find to group movies with matching provider IDs
+            var parent = new Dictionary<int, int>();
+            var rank = new Dictionary<int, int>();
+
+            int Find(int x)
+            {
+                if (!parent.ContainsKey(x))
+                {
+                    parent[x] = x;
+                    rank[x] = 0;
+                }
+
+                if (parent[x] != x)
+                {
+                    parent[x] = Find(parent[x]);
+                }
+
+                return parent[x];
+            }
+
+            void Union(int x, int y)
+            {
+                var px = Find(x);
+                var py = Find(y);
+                if (px == py)
+                {
+                    return;
+                }
+
+                if (rank[px] < rank[py])
+                {
+                    parent[px] = py;
+                }
+                else if (rank[px] > rank[py])
+                {
+                    parent[py] = px;
+                }
+                else
+                {
+                    parent[py] = px;
+                    rank[px]++;
+                }
+            }
+
+            // Build index of provider ID -> movie indices
+            var providerIdToMovies = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
+
+            for (var i = 0; i < movies.Count; i++)
+            {
+                var movie = movies[i];
+                var providerIds = movie.ProviderIds;
+
+                if (providerIds == null || providerIds.Count == 0)
+                {
+                    continue;
+                }
+
+                foreach (var (provider, id) in providerIds)
+                {
+                    if (string.IsNullOrEmpty(id))
+                    {
+                        continue;
+                    }
+
+                    // Create a unique key combining provider name and ID
+                    var key = $"{provider}:{id}";
+
+                    if (!providerIdToMovies.TryGetValue(key, out var movieIndices))
+                    {
+                        movieIndices = new List<int>();
+                        providerIdToMovies[key] = movieIndices;
+                    }
+
+                    movieIndices.Add(i);
+                }
+            }
+
+            // Union movies that share any provider ID
+            foreach (var (providerKey, movieIndices) in providerIdToMovies)
+            {
+                if (movieIndices.Count < 2)
+                {
+                    continue;
+                }
+
+                _logger.LogDebug(
+                    "MergeVersionsPostScanTask: Provider ID '{ProviderKey}' is shared by {Count} movies",
+                    providerKey,
+                    movieIndices.Count);
+
+                var first = movieIndices[0];
+                for (var i = 1; i < movieIndices.Count; i++)
+                {
+                    Union(first, movieIndices[i]);
+                }
+            }
+
+            // Group movies by their root parent
+            var groups = new Dictionary<int, List<Video>>();
+            for (var i = 0; i < movies.Count; i++)
+            {
+                var movie = movies[i];
+                if (movie.ProviderIds == null || movie.ProviderIds.Count == 0)
+                {
+                    continue;
+                }
+
+                var root = Find(i);
+                if (!groups.TryGetValue(root, out var group))
+                {
+                    group = new List<Video>();
+                    groups[root] = group;
+                }
+
+                group.Add(movie);
+            }
+
+            // Return only groups with more than one movie (actual duplicates)
+            return groups.Values.Where(g => g.Count > 1).ToList();
         }
 
         private async Task MergeMoviesAsync(List<Video> movies, CancellationToken cancellationToken)
@@ -186,10 +315,20 @@ namespace Emby.Server.Implementations.Library.Validators
                 .ToList();
 
             var primaryVersion = sortedMovies.First();
+            _logger.LogInformation(
+                "MergeVersionsPostScanTask: Selected primary version: '{MovieName}' ({Path})",
+                primaryVersion.Name,
+                primaryVersion.Path);
+
             var alternateVersionsOfPrimary = primaryVersion.LinkedAlternateVersions.ToList();
 
             foreach (var item in sortedMovies.Skip(1))
             {
+                _logger.LogInformation(
+                    "MergeVersionsPostScanTask: Linking '{MovieName}' ({Path}) as alternate version",
+                    item.Name,
+                    item.Path);
+
                 // Set the primary version ID on the alternate
                 item.SetPrimaryVersionId(primaryVersion.Id.ToString("N", CultureInfo.InvariantCulture));
 
@@ -225,6 +364,11 @@ namespace Emby.Server.Implementations.Library.Validators
             // Update the primary version with all linked alternates
             primaryVersion.LinkedAlternateVersions = alternateVersionsOfPrimary.ToArray();
             await primaryVersion.UpdateToRepositoryAsync(ItemUpdateType.MetadataEdit, cancellationToken).ConfigureAwait(false);
+
+            _logger.LogInformation(
+                "MergeVersionsPostScanTask: Primary version '{MovieName}' now has {Count} alternate versions",
+                primaryVersion.Name,
+                alternateVersionsOfPrimary.Count);
         }
     }
 }
