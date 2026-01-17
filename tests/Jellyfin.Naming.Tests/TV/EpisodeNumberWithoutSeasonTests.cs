@@ -19,6 +19,10 @@ namespace Jellyfin.Naming.Tests.TV
         [InlineData(2, "The Simpsons/The Simpsons - 02 Ep Name.avi")]
         [InlineData(7, "GJ Club (2013)/GJ Club - 07.mkv")]
         [InlineData(17, "Case Closed (1996-2007)/Case Closed - 317.mkv")]
+        // 4-digit episode numbers for long-running anime
+        [InlineData(100, "Detective Conan/detective conan - 0100 [bluray].mkv")]
+        [InlineData(1000, "Detective Conan/detective conan - 1000 [bluray].mkv")]
+        [InlineData(1234, "One Piece/One Piece - 1234.mkv")]
         // TODO: [InlineData(2, @"The Simpsons/The Simpsons 5 - 02 - Ep Name.avi")]
         // TODO: [InlineData(2, @"The Simpsons/The Simpsons 5 - 02 Ep Name.avi")]
         // TODO: [InlineData(7, @"Seinfeld/Seinfeld 0807 The Checks.avi")]

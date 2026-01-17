@@ -82,10 +82,12 @@ namespace Emby.Naming.Video
                 list.Add(info);
             }
 
-            if (supportMultiVersion)
-            {
-                list = GetVideosGroupedByVersion(list, namingOptions);
-            }
+            // Filename-based multi-version grouping is disabled.
+            // Movies are now merged by metadata IDs (IMDB, TMDB, etc.) in MergeVersionsPostScanTask.
+            // if (supportMultiVersion)
+            // {
+            //     list = GetVideosGroupedByVersion(list, namingOptions);
+            // }
 
             // Whatever files are left, just add them
             list.AddRange(remainingFiles.Select(i => new VideoInfo(i.Name)

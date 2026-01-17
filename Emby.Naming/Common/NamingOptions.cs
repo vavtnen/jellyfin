@@ -426,29 +426,30 @@ namespace Emby.Naming.Common
                 // "1-12 episode title"
                 new EpisodeExpression("([0-9]+)-([0-9]+)"),
 
-                // "01 - blah.avi", "01-blah.avi"
-                new EpisodeExpression(@".*(\\|\/)(?<epnumber>[0-9]{1,3})(-(?<endingepnumber>[0-9]{2,3}))*\s?-\s?[^\\\/]*$")
+                // "01 - blah.avi", "01-blah.avi", "0100 - blah.avi"
+                new EpisodeExpression(@".*(\\|\/)(?<epnumber>[0-9]{1,4})(-(?<endingepnumber>[0-9]{2,4}))*\s?-\s?[^\\\/]*$")
                 {
                     IsOptimistic = true,
                     IsNamed = true
                 },
 
-                // "01.blah.avi"
-                new EpisodeExpression(@".*(\\|\/)(?<epnumber>[0-9]{1,3})(-(?<endingepnumber>[0-9]{2,3}))*\.[^\\\/]+$")
+                // "01.blah.avi", "0100.blah.avi"
+                new EpisodeExpression(@".*(\\|\/)(?<epnumber>[0-9]{1,4})(-(?<endingepnumber>[0-9]{2,4}))*\.[^\\\/]+$")
                 {
                     IsOptimistic = true,
                     IsNamed = true
                 },
 
                 // "blah - 01.avi", "blah 2 - 01.avi", "blah - 01 blah.avi", "blah 2 - 01 blah", "blah - 01 - blah.avi", "blah 2 - 01 - blah"
-                new EpisodeExpression(@".*[\\\/][^\\\/]* - (?<epnumber>[0-9]{1,3})(-(?<endingepnumber>[0-9]{2,3}))*[^\\\/]*$")
+                // Also supports 4-digit episode numbers like "blah - 0100.avi" for long-running anime
+                new EpisodeExpression(@".*[\\\/][^\\\/]* - (?<epnumber>[0-9]{1,4})(-(?<endingepnumber>[0-9]{2,4}))*[^\\\/]*$")
                 {
                     IsOptimistic = true,
                     IsNamed = true
                 },
 
-                // "01 episode title.avi"
-                new EpisodeExpression(@"[Ss]eason[\._ ](?<seasonnumber>[0-9]+)[\\\/](?<epnumber>[0-9]{1,3})([^\\\/]*)$")
+                // "01 episode title.avi", "0100 episode title.avi"
+                new EpisodeExpression(@"[Ss]eason[\._ ](?<seasonnumber>[0-9]+)[\\\/](?<epnumber>[0-9]{1,4})([^\\\/]*)$")
                 {
                     IsOptimistic = true,
                     IsNamed = true

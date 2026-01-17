@@ -1,6 +1,7 @@
 #nullable disable
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -42,6 +43,8 @@ namespace MediaBrowser.Providers.MediaInfo
         IPreRefreshProvider,
         IHasItemChangeMonitor
     {
+        private static readonly ConcurrentDictionary<Guid, SemaphoreSlim> _librarySemaphores = new();
+
         private readonly ILogger<ProbeProvider> _logger;
         private readonly ILibraryManager _libraryManager;
         private readonly AudioResolver _audioResolver;
@@ -223,27 +226,27 @@ namespace MediaBrowser.Providers.MediaInfo
         /// <param name="cancellationToken">The <see cref="CancellationToken"/>.</param>
         /// <typeparam name="T">The type of item to resolve.</typeparam>
         /// <returns>A <see cref="Task"/> fetching the <see cref="ItemUpdateType"/> for an item.</returns>
-        public Task<ItemUpdateType> FetchVideoInfo<T>(T item, MetadataRefreshOptions options, CancellationToken cancellationToken)
+        public async Task<ItemUpdateType> FetchVideoInfo<T>(T item, MetadataRefreshOptions options, CancellationToken cancellationToken)
             where T : Video
         {
             if (item.IsPlaceHolder)
             {
-                return _cachedTask;
+                return ItemUpdateType.None;
             }
 
             if (!item.IsCompleteMedia)
             {
-                return _cachedTask;
+                return ItemUpdateType.None;
             }
 
             if (item.IsVirtualItem)
             {
-                return _cachedTask;
+                return ItemUpdateType.None;
             }
 
             if (!options.EnableRemoteContentProbe && !item.IsFileProtocol)
             {
-                return _cachedTask;
+                return ItemUpdateType.None;
             }
 
             // Skip probing if library option is set (useful for cloud storage)
@@ -251,7 +254,7 @@ namespace MediaBrowser.Providers.MediaInfo
             if (libraryOptions?.SkipMediaProbe == true)
             {
                 _logger.LogDebug("Skipping media probe for {ItemPath} due to library settings.", item.Path);
-                return _cachedTask;
+                return ItemUpdateType.None;
             }
 
             if (item.IsShortcut)
@@ -259,7 +262,26 @@ namespace MediaBrowser.Providers.MediaInfo
                 FetchShortcutInfo(item);
             }
 
-            return _videoProber.ProbeVideo(item, options, cancellationToken);
+            // Apply rate limiting if configured
+            var concurrentLimit = libraryOptions?.MediaProbeConcurrentLimit ?? 3;
+            if (concurrentLimit > 0)
+            {
+                var libraryId = item.GetTopParent()?.Id ?? Guid.Empty;
+                var semaphore = _librarySemaphores.GetOrAdd(libraryId, _ => new SemaphoreSlim(concurrentLimit, concurrentLimit));
+
+                await semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    _logger.LogDebug("Media probe acquired slot for {ItemPath} (limit: {Limit})", item.Path, concurrentLimit);
+                    return await _videoProber.ProbeVideo(item, options, cancellationToken).ConfigureAwait(false);
+                }
+                finally
+                {
+                    semaphore.Release();
+                }
+            }
+
+            return await _videoProber.ProbeVideo(item, options, cancellationToken).ConfigureAwait(false);
         }
 
         private string NormalizeStrmLine(string line)
@@ -285,17 +307,17 @@ namespace MediaBrowser.Providers.MediaInfo
         /// <param name="cancellationToken">The <see cref="CancellationToken"/>.</param>
         /// <typeparam name="T">The type of item to resolve.</typeparam>
         /// <returns>A <see cref="Task"/> fetching the <see cref="ItemUpdateType"/> for an item.</returns>
-        public Task<ItemUpdateType> FetchAudioInfo<T>(T item, MetadataRefreshOptions options, CancellationToken cancellationToken)
+        public async Task<ItemUpdateType> FetchAudioInfo<T>(T item, MetadataRefreshOptions options, CancellationToken cancellationToken)
             where T : Audio
         {
             if (item.IsVirtualItem)
             {
-                return _cachedTask;
+                return ItemUpdateType.None;
             }
 
             if (!options.EnableRemoteContentProbe && !item.IsFileProtocol)
             {
-                return _cachedTask;
+                return ItemUpdateType.None;
             }
 
             // Skip probing if library option is set (useful for cloud storage)
@@ -303,7 +325,7 @@ namespace MediaBrowser.Providers.MediaInfo
             if (libraryOptions?.SkipMediaProbe == true)
             {
                 _logger.LogDebug("Skipping media probe for {ItemPath} due to library settings.", item.Path);
-                return _cachedTask;
+                return ItemUpdateType.None;
             }
 
             if (item.IsShortcut)
@@ -311,7 +333,26 @@ namespace MediaBrowser.Providers.MediaInfo
                 FetchShortcutInfo(item);
             }
 
-            return _audioProber.Probe(item, options, cancellationToken);
+            // Apply rate limiting if configured
+            var concurrentLimit = libraryOptions?.MediaProbeConcurrentLimit ?? 3;
+            if (concurrentLimit > 0)
+            {
+                var libraryId = item.GetTopParent()?.Id ?? Guid.Empty;
+                var semaphore = _librarySemaphores.GetOrAdd(libraryId, _ => new SemaphoreSlim(concurrentLimit, concurrentLimit));
+
+                await semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    _logger.LogDebug("Media probe acquired slot for {ItemPath} (limit: {Limit})", item.Path, concurrentLimit);
+                    return await _audioProber.Probe(item, options, cancellationToken).ConfigureAwait(false);
+                }
+                finally
+                {
+                    semaphore.Release();
+                }
+            }
+
+            return await _audioProber.Probe(item, options, cancellationToken).ConfigureAwait(false);
         }
     }
 }
